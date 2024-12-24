@@ -56,8 +56,8 @@ pip install opencv-python-headless matplotlib pandas pyyaml
 
 1. Clone this repository:
    ```bash
-   git clone <repository-url>
-   cd <repository-folder>
+   git clone https://github.com/ufukasia/SuperGlue-Stereo-and-Temporal-Matching-Comparison.git
+   cd SuperGlue-Stereo-and-Temporal-Matching-Comparison
    ```
 
 2. Execute the SuperGlue feature matching script:
