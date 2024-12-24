@@ -14,7 +14,12 @@ This repository demonstrates the advantages of using the SuperGlue algorithm for
 
 ## Visual Comparisons
 
-- **SuperGlue Statistical Comparison**: See [Superglue_bar.png](Superglue_bar.png) for a detailed comparison against traditional algorithms.
+- **SuperGlue Statistical Comparison**: for a detailed comparison against traditional algorithms you can look this statics
+![SuperGlue Visualization](Superglue_bar.png)
+
+
+
+
 
 ## Getting Started
 
