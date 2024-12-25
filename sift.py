@@ -22,7 +22,7 @@ class StereoMatcher:
             'filename0': None  # Önceki cam0 dosya adı
         }
 
-        # SIFT dedektörü oluştur (ORB yerine SIFT kullanıldı) ve nfeatures=1000 olarak ayarlandı
+        # SIFT dedektörü oluştur (ORB yerine SIFT) ve nfeatures=1000 olarak ayarlandı
         self.orb = cv2.SIFT_create(nfeatures=1000)
 
         # BFMatcher'ları oluştur (NORM_HAMMING yerine NORM_L2 kullanıldı)
@@ -66,9 +66,21 @@ class StereoMatcher:
             self.D1 = np.array(self.cam0_params['distortion_coefficients'])
             self.D2 = np.array(self.cam1_params['distortion_coefficients'])
 
-            # Stereo dışsal parametreleri
-            self.R = np.eye(3)  # Rotasyon matrisi
-            self.T = np.array([0.1, 0, 0])  # Translasyon vektörü
+            # Stereo dışsal parametreleri (cam0 -> cam1 dönüşüm matrisi)
+            baseline_matrix = np.array([
+                [ 0.99999609,  0.0023145 , -0.00136141, -0.110073  ],
+                [-0.00231508,  0.99999693, -0.00042232, -0.000399  ],
+                [ 0.00136043,  0.00042547,  0.99999868, -0.000284  ],
+                [ 0.        ,  0.        ,  0.        ,  1.        ]
+            ])
+            # Rotasyon ve translasyon
+            self.R = baseline_matrix[:3, :3]
+            self.T = baseline_matrix[:3, 3]
+
+            # Baseline norm bilgisini ekrana yaz
+            baseline_norm = np.linalg.norm(self.T)
+            print("Baseline (cam0 to cam1) matris:\n", baseline_matrix)
+            print(f"Baseline norm: {baseline_norm:.9f} [m]")
 
             print("Rektifikasyon haritaları hesaplanıyor...")
             self.compute_rectification()
@@ -92,11 +104,12 @@ class StereoMatcher:
         # Rektifikasyon haritalarını hesapla
         self.map1x, self.map1y = cv2.initUndistortRectifyMap(
             self.K1, self.D1, self.R1, self.P1,
-            img_size, cv2.CV_32FC1)
-
+            img_size, cv2.CV_32FC1
+        )
         self.map2x, self.map2y = cv2.initUndistortRectifyMap(
             self.K2, self.D2, self.R2, self.P2,
-            img_size, cv2.CV_32FC1)
+            img_size, cv2.CV_32FC1
+        )
 
     def load_timestamps(self):
         """Görüntü zaman damgalarını yükle"""
@@ -128,7 +141,7 @@ class StereoMatcher:
         return rect1, rect2
 
     def detect_features(self, img):
-        """Görüntüde özellik noktalarını tespit et"""
+        """Görüntüde özellik noktalarını tespit et (SIFT kullanımı)"""
         try:
             if img is None:
                 print("Uyarı: Özellik tespiti için görüntü boş")
@@ -147,7 +160,7 @@ class StereoMatcher:
             return None, None
 
     def match_stereo_features(self, desc1, desc2):
-        """Stereo görüntüler arasında özellik eşleştirme"""
+        """Stereo görüntüler arasında özellik eşleştirme (SIFT-Descriptor, BFMatcher NORM_L2)"""
         if desc1 is None or desc2 is None or len(desc1) < 2 or len(desc2) < 2:
             return []
 
@@ -198,8 +211,20 @@ class StereoMatcher:
     def triangulate_points(self, pts1, pts2):
         """3D noktaları üçgenle"""
         # Noktaları normalize et
-        pts1_norm = cv2.undistortPoints(pts1.reshape(-1,1,2), self.K1, self.D1, R=self.R1, P=self.P1)
-        pts2_norm = cv2.undistortPoints(pts2.reshape(-1,1,2), self.K2, self.D2, R=self.R2, P=self.P2)
+        pts1_norm = cv2.undistortPoints(
+            pts1.reshape(-1, 1, 2),
+            self.K1,
+            self.D1,
+            R=self.R1,
+            P=self.P1
+        )
+        pts2_norm = cv2.undistortPoints(
+            pts2.reshape(-1, 1, 2),
+            self.K2,
+            self.D2,
+            R=self.R2,
+            P=self.P2
+        )
 
         # Projeksiyon matrisleri
         P1 = self.P1
@@ -268,7 +293,8 @@ class StereoMatcher:
 
             # Temporal takip - stereo eşleştirmeden gelen noktaları kullan
             prev_pts, curr_pts, motion_vectors = self.track_temporal_matches(
-                matched_kp, matched_desc, points_3d, rect1)
+                matched_kp, matched_desc, points_3d, rect1
+            )
 
             # Sonuçları kaydet
             result = {
@@ -300,7 +326,7 @@ class StereoMatcher:
                 'desc': matched_desc,
                 'points3d': points_3d,
                 'image': rect1.copy() if rect1 is not None else None,
-                'filename0': filename0  # Şu anki filename0'u önceki olarak kaydet
+                'filename0': filename0
             }
 
             return (result, vis_data, filenames_stereo, filenames_temporal)
@@ -348,18 +374,17 @@ class StereoMatcher:
             curr_3d = []
 
             for m in good_matches:
-                # İndeks kontrolü
-                if (m.queryIdx < len(self.prev_frame['kp']) and 
-                    m.trainIdx < len(curr_kp) and 
-                    m.queryIdx < len(self.prev_frame['points3d']) and 
+                if (m.queryIdx < len(self.prev_frame['kp']) and
+                    m.trainIdx < len(curr_kp) and
+                    m.queryIdx < len(self.prev_frame['points3d']) and
                     m.trainIdx < len(curr_points3d)):
-                    
+
                     prev_pts.append(self.prev_frame['kp'][m.queryIdx].pt)
                     curr_pts.append(curr_kp[m.trainIdx].pt)
                     prev_3d.append(self.prev_frame['points3d'][m.queryIdx])
                     curr_3d.append(curr_points3d[m.trainIdx])
 
-            if not prev_pts:  # Eğer geçerli nokta bulunamadıysa
+            if not prev_pts:
                 return None, None, None
 
             prev_pts = np.float32(prev_pts)
@@ -390,18 +415,17 @@ class StereoMatcher:
 
             # Ana görüntü alanını oluştur
             h, w = rect1.shape[:2]
-            combined_h = h  # Tek satır
-            combined_w = 4 * w  # Dört sütun
+            combined_h = h
+            combined_w = 4 * w
             vis_img = np.zeros((combined_h, combined_w, 3), dtype=np.uint8)
 
             # Stereo bölümü (ilk iki sütun)
             stereo_vis = cv2.cvtColor(rect1, cv2.COLOR_GRAY2BGR)
             stereo_vis2 = cv2.cvtColor(rect2, cv2.COLOR_GRAY2BGR)
 
-            # Görüntülerin üzerine etiket ekle
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 1
-            color = (0, 255, 255)  # Beyaz renk
+            color = (0, 255, 255)
             thickness = 4
 
             # Tüm özellik noktalarını kırmızı çiz
@@ -423,7 +447,7 @@ class StereoMatcher:
 
             # Cam0 için dosya adı ekle
             cv2.putText(stereo_vis, f'Cam0 Curr {filenames_stereo[0]}', (10, 40), font, font_scale, color, thickness, cv2.LINE_AA)
-            cv2.putText(stereo_vis, f'Sift', (10, 450), font, font_scale, color, thickness, cv2.LINE_AA)
+            cv2.putText(stereo_vis, 'Sift', (10, 450), font, font_scale, color, thickness, cv2.LINE_AA)
             # Cam1 için dosya adı ekle
             cv2.putText(stereo_vis2, f'Cam1 Curr {filenames_stereo[1]}', (10, 40), font, font_scale, color, thickness, cv2.LINE_AA)
 
@@ -437,35 +461,27 @@ class StereoMatcher:
                 filename_prev, filename_curr = filenames_temporal
 
                 if prev_pts is not None and curr_pts is not None and len(prev_pts) > 0:
-                    # Görüntüleri hazırla
                     temp_vis1 = cv2.cvtColor(prev_img.astype(np.uint8), cv2.COLOR_GRAY2BGR)
                     temp_vis2 = cv2.cvtColor(curr_img.astype(np.uint8), cv2.COLOR_GRAY2BGR)
 
-                    # Her nokta için
                     for i, ((x1, y1), (x2, y2)) in enumerate(zip(prev_pts, curr_pts)):
-                        # Hareket büyüklüğüne göre renk
                         if motion_vectors is not None and i < len(motion_vectors):
                             motion_magnitude = np.linalg.norm(motion_vectors[i])
-                            # Hareket büyüklüğünü normalize et ve renk haritasına uygula
                             normalized_magnitude = min(motion_magnitude / 0.1, 1.0)
                             color_mapped = plt.cm.RdYlGn(1 - normalized_magnitude)[:3]
                             color_mapped = tuple(int(c * 255) for c in color_mapped)
                         else:
                             color_mapped = (0, 255, 0)
 
-                        # Noktaları çiz
                         cv2.circle(temp_vis1, (int(x1), int(y1)), 10, color_mapped, -1)
                         cv2.circle(temp_vis2, (int(x2), int(y2)), 10, color_mapped, -1)
 
-                    # Görüntülerin üzerine etiket ekle
                     cv2.putText(temp_vis1, f'Prev: {filename_prev}', (10, 40), font, font_scale, color, thickness, cv2.LINE_AA)
                     cv2.putText(temp_vis2, f'Curr: {filename_curr}', (10, 40), font, font_scale, color, thickness, cv2.LINE_AA)
 
-                    # Temporal görüntüleri yerleştir
                     vis_img[:, 2*w:3*w] = temp_vis1
                     vis_img[:, 3*w:4*w] = temp_vis2
 
-            # Kaydet veya göster
             if save_path:
                 cv2.imwrite(save_path, vis_img)
             else:
@@ -495,18 +511,14 @@ class StereoMatcher:
             for i, timestamp in enumerate(timestamps):
                 print(f"Kare işleniyor {i+1}/{total_frames}")
 
-                # Frame pair ve dosya adlarını işle
                 processed = self.process_frame_pair(timestamp)
-
                 if processed is None:
                     continue
 
                 result, vis_data, filenames_stereo, filenames_temporal = processed
-
                 self.results.append(result)
 
                 if visualize and i % viz_interval == 0 and vis_data is not None:
-                    # Stereo ve temporal eşleştirmeleri tek plotta göster
                     save_path = f"visualizations_sift/combined_tracking_{timestamp}.png"
                     self.visualize_combined_tracking(
                         vis_data['stereo'],
@@ -575,7 +587,7 @@ def main():
         matcher.process_sequence(
             max_frames=None,     # Tüm kareleri işle
             visualize=True,      # Görselleştirmeleri oluştur
-            viz_interval=100     # Her karede bir görselleştir
+            viz_interval=100     # Her 100 karede bir görselleştir
         )
 
         # İstatistikleri hesapla ve göster
