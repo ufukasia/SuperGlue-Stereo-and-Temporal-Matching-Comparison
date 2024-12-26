@@ -75,9 +75,21 @@ class StereoMatcher:
             self.D1 = np.array(self.cam0_params['distortion_coefficients'])
             self.D2 = np.array(self.cam1_params['distortion_coefficients'])
 
-            # Stereo dışsal parametreleri
-            self.R = np.eye(3)  # Rotasyon matrisi
-            self.T = np.array([0.1, 0, 0])  # Translasyon vektörü
+            # Stereo dışsal parametreleri (cam0 -> cam1 dönüşüm matrisi)
+            baseline_matrix = np.array([
+                [ 0.99999609,  0.0023145 , -0.00136141, -0.110073  ],
+                [-0.00231508,  0.99999693, -0.00042232, -0.000399  ],
+                [ 0.00136043,  0.00042547,  0.99999868, -0.000284  ],
+                [ 0.        ,  0.        ,  0.        ,  1.        ]
+            ])
+            # Dönüşüm matrisinden R ve T'yi al
+            self.R = baseline_matrix[:3, :3]
+            self.T = baseline_matrix[:3, 3]
+
+            # Baseline norm bilgisini yazdır
+            baseline_norm = np.linalg.norm(self.T)
+            print("Baseline (cam0 to cam1) matris:\n", baseline_matrix)
+            print(f"Baseline norm: {baseline_norm:.9f} [m]")
 
             print("Rektifikasyon haritaları hesaplanıyor...")
             self.compute_rectification()
@@ -101,11 +113,12 @@ class StereoMatcher:
         # Rektifikasyon haritalarını hesapla
         self.map1x, self.map1y = cv2.initUndistortRectifyMap(
             self.K1, self.D1, self.R1, self.P1,
-            img_size, cv2.CV_32FC1)
-
+            img_size, cv2.CV_32FC1
+        )
         self.map2x, self.map2y = cv2.initUndistortRectifyMap(
             self.K2, self.D2, self.R2, self.P2,
-            img_size, cv2.CV_32FC1)
+            img_size, cv2.CV_32FC1
+        )
 
     def load_timestamps(self):
         """Görüntü zaman damgalarını yükle"""
@@ -207,8 +220,20 @@ class StereoMatcher:
     def triangulate_points(self, pts1, pts2):
         """3D noktaları üçgenle"""
         # Noktaları normalize et
-        pts1_norm = cv2.undistortPoints(pts1.reshape(-1,1,2), self.K1, self.D1, R=self.R1, P=self.P1)
-        pts2_norm = cv2.undistortPoints(pts2.reshape(-1,1,2), self.K2, self.D2, R=self.R2, P=self.P2)
+        pts1_norm = cv2.undistortPoints(
+            pts1.reshape(-1, 1, 2),
+            self.K1,
+            self.D1,
+            R=self.R1,
+            P=self.P1
+        )
+        pts2_norm = cv2.undistortPoints(
+            pts2.reshape(-1, 1, 2),
+            self.K2,
+            self.D2,
+            R=self.R2,
+            P=self.P2
+        )
 
         # Projeksiyon matrisleri
         P1 = self.P1
@@ -277,7 +302,8 @@ class StereoMatcher:
 
             # Temporal takip - stereo eşleştirmeden gelen noktaları kullan
             prev_pts, curr_pts, motion_vectors = self.track_temporal_matches(
-                matched_kp, matched_desc, points_3d, rect1)
+                matched_kp, matched_desc, points_3d, rect1
+            )
 
             # Sonuçları kaydet
             result = {
@@ -303,7 +329,7 @@ class StereoMatcher:
             print(f"İşleme başarılı - Toplam/İyi Eşleştirme: {len(initial_matches)}/{len(good_matches)}")
             print(f"Temporal eşleştirme sayısı: {len(prev_pts) if prev_pts is not None else 0}")
 
-            # Son kareyi güncelle (filename0'i önceki olarak kaydet)
+            # Son kareyi güncelle (filename0'u önceki olarak kaydet)
             self.prev_frame = {
                 'kp': matched_kp,
                 'desc': matched_desc,
@@ -343,7 +369,8 @@ class StereoMatcher:
             for m, n in matches:
                 if m.distance < 0.9 * n.distance:
                     # İndeks kontrolü ekle
-                    if m.queryIdx < len(self.prev_frame['points3d']) and m.trainIdx < len(curr_points3d):
+                    if (m.queryIdx < len(self.prev_frame['points3d']) 
+                        and m.trainIdx < len(curr_points3d)):
                         good_matches.append(m)
 
             if len(good_matches) < 8:
@@ -357,7 +384,6 @@ class StereoMatcher:
             curr_3d = []
 
             for m in good_matches:
-                # İndeks kontrolü
                 if (m.queryIdx < len(self.prev_frame['kp']) and 
                     m.trainIdx < len(curr_kp) and 
                     m.queryIdx < len(self.prev_frame['points3d']) and 
@@ -410,7 +436,7 @@ class StereoMatcher:
             # Görüntülerin üzerine etiket ekle
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 1
-            color = (0, 255, 255)  # Beyaz renk
+            color = (0, 255, 255)  # Sarı tonları
             thickness = 4
 
             # Tüm özellik noktalarını kırmızı çiz
@@ -464,8 +490,7 @@ class StereoMatcher:
                         cv2.circle(temp_vis1, (int(x1), int(y1)), 10, color_mapped, -1)
                         cv2.circle(temp_vis2, (int(x2), int(y2)), 10, color_mapped, -1)
                     
-
-                     # Görüntülerin üzerine etiket ekle
+                    # Görüntülerin üzerine etiket ekle
                     cv2.putText(temp_vis1, f'Prev: {filename_prev}', (10, 30), font, font_scale, color, thickness, cv2.LINE_AA)
                     cv2.putText(temp_vis2, f'Curr: {filename_curr}', (10, 30), font, font_scale, color, thickness, cv2.LINE_AA)
 
@@ -579,7 +604,7 @@ def main():
         matcher.process_sequence(
             max_frames=None,     # Tüm kareleri işle
             visualize=True,      # Görselleştirmeleri oluştur
-            viz_interval=100     # Her karede bir görselleştir
+            viz_interval=100     # Her 100 karede bir görselleştir
         )
 
         # İstatistikleri hesapla ve göster

@@ -83,9 +83,21 @@ class StereoMatcher:
             self.D1 = np.array(self.cam0_params['distortion_coefficients'])
             self.D2 = np.array(self.cam1_params['distortion_coefficients'])
 
-            # Stereo dışsal parametreleri
-            self.R = np.eye(3)  # Rotasyon matrisi
-            self.T = np.array([0.1, 0, 0])  # Translasyon vektörü
+            # Stereo dışsal parametreleri (cam0 -> cam1 dönüşüm matrisi)
+            baseline_matrix = np.array([
+                [ 0.99999609,  0.0023145 , -0.00136141, -0.110073  ],
+                [-0.00231508,  0.99999693, -0.00042232, -0.000399  ],
+                [ 0.00136043,  0.00042547,  0.99999868, -0.000284  ],
+                [ 0.        ,  0.        ,  0.        ,  1.        ]
+            ])
+
+            self.R = baseline_matrix[:3, :3]
+            self.T = baseline_matrix[:3, 3]
+
+            # Baseline norm bilgisini yazdır
+            baseline_norm = np.linalg.norm(self.T)
+            print("Baseline (cam0 to cam1) matris:\n", baseline_matrix)
+            print(f"Baseline norm: {baseline_norm:.9f} [m]")
 
             print("Rektifikasyon haritaları hesaplanıyor...")
             self.compute_rectification()
@@ -149,7 +161,7 @@ class StereoMatcher:
         try:
             if img1 is None or img2 is None:
                 print("Uyarı: Görüntüler boş")
-                return None, None, None, None, None
+                return None, None, None, None, None, None  # Burada valid'i de ekleyeceğiz
 
             # Görüntüleri tensöre dönüştür
             img1_tensor = frame2tensor(img1, self.device)
@@ -174,11 +186,11 @@ class StereoMatcher:
             desc1 = None
             desc2 = None
 
-            return mkp1, mkp2, desc1, desc2, matches
+            return mkp1, mkp2, desc1, desc2, matches, valid  # valid'i de döndür
 
         except Exception as e:
             print(f"Özellik tespiti ve eşleştirme hatası: {e}")
-            return None, None, None, None, None
+            return None, None, None, None, None, None
 
     def filter_matches_with_fundamental(self, pts1, pts2, threshold=1.0):
         """Temel matris kısıtlaması ile eşleştirmeleri filtrele"""
@@ -242,7 +254,7 @@ class StereoMatcher:
             rect1, rect2 = self.rectify_images(img1, img2)
 
             # Özellik noktalarını bul ve eşleştir
-            pts1, pts2, desc1, desc2, matches = self.detect_and_match_features(rect1, rect2)
+            pts1, pts2, desc1, desc2, matches, valid = self.detect_and_match_features(rect1, rect2)
 
             if pts1 is None or pts2 is None:
                 print(f"Uyarı: {timestamp} için eşleşme bulunamadı")
@@ -269,7 +281,7 @@ class StereoMatcher:
                 'timestamp': timestamp,
                 'kp1_count': len(pts1),
                 'kp2_count': len(pts2),
-                'stereo_matches': len(matches),
+                'stereo_matches': len(matches[valid]),  # valid burada kullanılıyor
                 'triangulated_points': len(pts1_filtered),
                 'temporal_matches': len(prev_pts) if prev_pts is not None else 0
             }
@@ -286,7 +298,7 @@ class StereoMatcher:
             filenames_temporal = (self.prev_frame['filename0'], filename0)
 
             print(f"İşleme başarılı - Toplam/İyi Eşleştirme: {len(matches)}/{len(pts1_filtered)}")
-            print(f"Temporal eşleştirme sayısı: {len(prev_pts) if prev_pts is not None else 0}")
+            print(f"Temporal eşleşme sayısı: {len(prev_pts) if prev_pts is not None else 0}")
 
             # Son kareyi güncelle (filename0'u önceki olarak kaydet)
             self.prev_frame = {
@@ -298,7 +310,7 @@ class StereoMatcher:
             }
 
             return (result, vis_data, filenames_stereo, filenames_temporal)
-        
+
         except Exception as e:
             print(f"Kare çifti işleme hatası: {e}")
             return None, None
@@ -389,7 +401,7 @@ class StereoMatcher:
             # Görüntülerin üzerine dosya adlarını ekle
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 1
-            color = (0, 255, 255)  # Beyaz renk
+            color = (0, 255, 255)
             thickness = 4
 
             # Tüm özellik noktalarını kırmızı çiz
@@ -556,6 +568,10 @@ class StereoMatcher:
 
 def main():
     try:
+        # Kodun hangi aygıt üzerinde çalıştığını ekrana yaz
+        device_info = "GPU" if torch.cuda.is_available() else "CPU"
+        print(f"Bu kod şu anda {device_info} üzerinde çalışıyor.")
+
         # Matcher'ı başlat
         matcher = StereoMatcher("")
 
@@ -563,7 +579,7 @@ def main():
         matcher.process_sequence(
             max_frames=None,     # Tüm kareleri işle
             visualize=True,      # Görselleştirmeleri oluştur
-            viz_interval=100      # Her karede bir görselleştir
+            viz_interval=100     # Her 100 karede bir görselleştir
         )
 
         # İstatistikleri hesapla ve göster

@@ -14,7 +14,12 @@ This repository demonstrates the advantages of using the SuperGlue algorithm for
 
 ## Visual Comparisons
 
-- **SuperGlue Statistical Comparison**: See [Superglue_bar.png](Superglue_bar.png) for a detailed comparison against traditional algorithms.
+- **SuperGlue Statistical Comparison**: for a detailed comparison against traditional algorithms you can look this statics
+![SuperGlue Visualization](Superglue_bar.png)
+
+
+
+
 
 ## Getting Started
 
@@ -56,8 +61,8 @@ pip install opencv-python-headless matplotlib pandas pyyaml
 
 1. Clone this repository:
    ```bash
-   git clone <repository-url>
-   cd <repository-folder>
+   git clone https://github.com/ufukasia/SuperGlue-Stereo-and-Temporal-Matching-Comparison.git
+   cd SuperGlue-Stereo-and-Temporal-Matching-Comparison
    ```
 
 2. Execute the SuperGlue feature matching script:
